@@ -1,3 +1,4 @@
+#multilingual指的是多语言的意思，rag_multilingual.py是一个多语言的RAG
 import fitz
 import chromadb
 from sentence_transformers import SentenceTransformer
