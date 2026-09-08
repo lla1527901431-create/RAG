@@ -1,0 +1,6 @@
+PyMuPDF
+chromadb
+sentence-transformers
+scikit-learn
+openai==3.8.0
+python-dotenv==1.2.3
