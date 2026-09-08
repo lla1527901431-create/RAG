@@ -1,6 +1,9 @@
 import pymupdf as fitz
 import chromadb
+import re
 from sentence_transformers import SentenceTransformer
+from typing import List
+import os
 
 
 # =========================
@@ -21,29 +24,65 @@ pdf.close()
 # 2. 切分文本
 # =========================
 
-def split_text(text, chunk_size=500, overlap=50):
+def split_sentences(text):
+    """
+    使用正则表达式把文本分成一个个句子。
+    """
+
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+
+    sentences = [
+        sentence.strip()
+        for sentence in sentences
+        if sentence.strip()
+    ]
+
+    return sentences
+
+
+def chunk_by_sentence(
+    text,
+    max_chars=500,
+    overlap_sentences=1
+):
+    """
+    根据句子进行文本分块。
+
+    参数：
+        text：原始文本
+        max_chars：每个 Chunk 最大字符数
+        overlap_sentences：相邻 Chunk 重叠几个句子
+    """
+
+    sentences = split_sentences(text)
 
     chunks = []
+    current_chunk = []
 
-    start = 0
+    for sentence in sentences:
 
-    while start < len(text):
+        current_length = sum(len(s) for s in current_chunk)
 
-        end = start + chunk_size
+        if current_length + len(sentence) <= max_chars:
+            current_chunk.append(sentence)
 
-        chunk = text[start:end]
+        else:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
 
-        chunks.append(chunk)
+            current_chunk = current_chunk[-overlap_sentences:]
+            current_chunk.append(sentence)
 
-        start = end - overlap
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
 
     return chunks
 
-
-chunks = split_text(text)
-
-print("PDF 文本长度：", len(text))
-print("Chunk 数量：", len(chunks))
+chunks = chunk_by_sentence(
+    text,
+    max_chars=500,
+    overlap_sentences=1
+)
 
 
 # =========================
@@ -74,25 +113,34 @@ collection = client.get_or_create_collection(
 # 5. 把 Chunk 存进向量数据库
 # =========================
 
+# 把所有 Chunk 转换成向量
 vectors = model.encode(chunks)
 
+# 为每个 Chunk 创建唯一 ID
 ids = []
-
 for i in range(len(chunks)):
     ids.append(f"chunk_{i}")
 
+# Chroma 一次最多处理 5461 条
+# 所以我们分批写入
+batch_size = 5000
 
-collection.add(
-    documents=chunks,
-    embeddings=vectors.tolist(),
-    ids=ids
-)
+for start in range(0, len(chunks), batch_size):
 
+    end = start + batch_size
+
+    collection.add(
+        documents=chunks[start:end],
+        embeddings=vectors[start:end].tolist(),
+        ids=ids[start:end]
+    )
+
+    print(f"已经写入 {min(end, len(chunks))} / {len(chunks)} 条数据")
 
 print("向量库建立完成！")
 print("数据库中的数据数量：", collection.count())
 
-
+'''
 # =========================
 # 6. 用户提问
 # =========================
@@ -128,3 +176,4 @@ for i, document in enumerate(results["documents"][0]):
     print(f"\n--- 第 {i + 1} 个结果 ---")
 
     print(document)
+'''
